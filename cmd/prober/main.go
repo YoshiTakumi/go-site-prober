@@ -8,8 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/yoshitakumi/go-site-prober/internal/probe"
 	"github.com/yoshitakumi/go-site-prober/pkg/config"
+	m "github.com/yoshitakumi/go-site-prober/pkg/metrics"
 )
 
 func main() {
@@ -19,6 +21,8 @@ func main() {
 	if len(cfg.Targets) == 0 {
 		log.Println("warning: no targets provided")
 	}
+
+	m.MustRegister()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -47,6 +51,8 @@ func main() {
 		_, _ = w.Write(runner.ResultsJSON())
 	})
 
+	mux.Handle("/metrics", promhttp.Handler())
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      mux,
@@ -66,5 +72,7 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("graceful shutdown error: %v", err)
+	}
 }
